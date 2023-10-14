@@ -130,7 +130,7 @@ void clientWork(int soc) {
      {
        if (i == 0)
        {
-         printf("Unexpected close of connection at server\n");
+         printf("Server is break\n");
          break;
        }
        else if(i == -1){
