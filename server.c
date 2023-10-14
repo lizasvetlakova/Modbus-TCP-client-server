@@ -10,27 +10,20 @@
 #define DEFAULT_PORT 2000
 #define MAX_CLIENT_COUNT 50
 #define MODBUSADRESS 3
-#define COMMAND "close\n"
 
-void* serverWork(void* soc);
-void* serverListen();
-int lastClient = 0;
+void* serverWork(void* arg);
+
+typedef struct 
+{
+  int socket;
+  int number;
+}client;
+
 
 int main() {
-  char command[10];
-  pthread_t server;
-  pthread_create(&server, NULL, &serverListen, NULL);
-  sched_yield();
-  while(1){
-    fgets(command, 10, stdin);
-    if(strcmp(command, COMMAND) == 0) break;
-    else printf("incorrect command\n");
-   }
-
-}
-
-void* serverListen() {
   int soc;
+  int lastClient = -1;
+
   soc = socket(AF_INET, SOCK_STREAM, 0);
   if(soc < 0){
    printf("Error: create socket\n");
@@ -48,26 +41,34 @@ void* serverListen() {
   printf("Server is waiting for request\n");
   listen(soc, SOMAXCONN);
   pthread_t threads[MAX_CLIENT_COUNT];
-  int clientSocets[MAX_CLIENT_COUNT];
 
   socklen_t serverSize = sizeof(serverAddr);
   while(1){
+    lastClient++;
     int clientSocet = accept(soc, (struct sockaddr *)&serverAddr, &serverSize);
     if(clientSocet < 0){
       printf("Error of connection\n");
     }
-    clientSocets[lastClient] = clientSocet;
-    pthread_create(&threads[lastClient], NULL, &serverWork, &clientSocets[lastClient]);
+    if(lastClient == MAX_CLIENT_COUNT) break;
+    client c;
+    c.socket = clientSocet;
+    c.number = lastClient;
+    pthread_create(&threads[lastClient], NULL, &serverWork, (void*)&c);
     sched_yield();
-
+    
   }
+  
   close(soc);
-
+  pthread_exit(NULL); 
 }
 
-void* serverWork(void* _soc) {
-  int *soc = (int*)_soc;
-  lastClient++;
+
+void* serverWork(void* arg) {
+  client* clnt = (client *)arg;
+  int soc = clnt->socket;
+  int number = clnt->number;
+  number++;
+
   unsigned char sendbuf[256];
   unsigned char recvnbuf[256];
   char* message;
@@ -76,33 +77,39 @@ void* serverWork(void* _soc) {
   unsigned short registers [10];
   for (int i = 0; i < 10; i++) {registers[i] = i + 1;}
 
-  printf("Connection with client %d\n\n", lastClient);
+  printf("\nConnection with client %d\n\n", number);
   while(1){
-    i =recv(*soc, recvnbuf, 256, 0);
+    i =recv(soc, recvnbuf, 256, 0);
     first = (recvnbuf[8]<<8) + recvnbuf[9];
     nums = (recvnbuf[10]<<8) + recvnbuf[11];
 
     if(i == -1){
       printf("receive error");
     }
+    else if (i == 0)
+       {
+         printf("Connection with client %d break\n", number);
+         break;
+       }
     else if(strcmp(recvnbuf, "exit") == 0){
+      printf("Connection with client %d closed\n", number);
       break;
     }
     else if(recvnbuf[6] != MODBUSADRESS){
       message = "Incorrect MODBUS adress";
-      send(*soc, message, strlen(message), 0);
+      send(soc, message, strlen(message), 0);
     }
     else if(recvnbuf[7] & 0x80){
       message = "Incorrect MODBUS function code";
-      send(*soc, message, strlen(message), 0);
+      send(soc, message, strlen(message), 0);
     }
     else if(first > 10){
       message = "Incorrect number of first register";
-      send(*soc, message, strlen(message), 0);
+      send(soc, message, strlen(message), 0);
     }
     else if((10 - first - nums) < -1){
       message = "Incorrect nums of registers";
-      send(*soc, message, strlen(message), 0);
+      send(soc, message, strlen(message), 0);
     }
     else {
 
@@ -122,7 +129,7 @@ void* serverWork(void* _soc) {
 
       lenbuf = 9+2*nums;
 
-      i = send(*soc, sendbuf, lenbuf, 0);
+      i = send(soc, sendbuf, lenbuf, 0);
       if (i < lenbuf)
       {
           printf("Failed to send all\n");
@@ -130,7 +137,6 @@ void* serverWork(void* _soc) {
   }
 
   }
-
-   printf("Connection with client %d closed\n", lastClient);
-   close(*soc);
+   close(soc);
+   pthread_exit(NULL);
 }
