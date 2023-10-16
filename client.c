@@ -33,7 +33,10 @@ int main() {
       printf("\nServer is not response. Reconnection (10 seconds)...\n");
       alarm(10);
       pause();
-      if(FLAG) continue;
+      if(FLAG) {
+        FLAG = 0;
+        continue;
+      }
     } 
     else {
       printf("\nSuccesssul connection to the server\n");
@@ -42,7 +45,10 @@ int main() {
         printf("Reconnection (10 seconds)...\n");
         alarm(10);
         pause();
-        if(FLAG) continue;
+        if(FLAG) {
+          FLAG = 0;
+          continue;
+        }
       }
       else if (res == 0){
         break;
