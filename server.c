@@ -79,18 +79,20 @@ void* serverWork(void* arg) {
 
   printf("\nConnection with client %d\n\n", number);
   while(1){
-    i =recv(soc, recvnbuf, 256, 0);
-    first = (recvnbuf[8]<<8) + recvnbuf[9];
-    nums = (recvnbuf[10]<<8) + recvnbuf[11];
+    i =recv(soc, recvnbuf, 256, 0);  
 
     if(i == -1){
       printf("receive error");
     }
-    else if (i == 0)
-       {
-         printf("Connection with client %d break\n", number);
-         break;
-       }
+    else if (i == 0){
+      printf("Connection with client %d break\n", number);
+      break;
+    }
+    else if(strcmp(recvnbuf, "check") == 0){
+      printf("check");
+      send(soc, "check", 5, 0);
+      continue;
+    }
     else if(strcmp(recvnbuf, "exit") == 0){
       printf("Connection with client %d closed\n", number);
       break;
@@ -112,6 +114,8 @@ void* serverWork(void* arg) {
       send(soc, message, strlen(message), 0);
     }
     else {
+      first = (recvnbuf[8]<<8) + recvnbuf[9];
+      nums = (recvnbuf[10]<<8) + recvnbuf[11];
 
       for (i=0;i<5;i++) sendbuf[i] = 0;
       sendbuf[5] = 3+2*nums;
