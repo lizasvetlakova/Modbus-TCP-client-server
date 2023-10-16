@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <string.h>
+#include <signal.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/ioctl.h>
@@ -12,18 +13,44 @@
 #define DEFAULT_PORT 2000
 #define SERVER_IP "127.0.0.1"
 #define LENUSERINPUT	32
+
 int createConnection();
-void clientWork(int soc);
+int clientWork(int soc);
+
+fd_set fds;
+struct timeval tv;
+int FLAG = 0;
+
+void alarm_handler(){
+  FLAG = 1;
+}
 
 int main() {
-  int con = createConnection();
-  if (con == -1) {
-    printf("Server is not response\n");
-  } else {
-    printf("Successsul connection to the server\n");
-    clientWork(con);
-    return 0;
+  signal(SIGALRM, alarm_handler);
+  while (1){
+    int con = createConnection();
+    if (con == -1) {
+      printf("\nServer is not response. Reconnection (10 seconds)...\n");
+      alarm(10);
+      pause();
+      if(FLAG) continue;
+    } 
+    else {
+      printf("\nSuccesssul connection to the server\n");
+      int res = clientWork(con);
+      if( res == -1){
+        printf("Reconnection (10 seconds)...\n");
+        alarm(10);
+        pause();
+        if(FLAG) continue;
+      }
+      else if (res == 0){
+        break;
+      }
+    }
   }
+  
+  return 0;
 }
 
 int createConnection() {
@@ -41,7 +68,7 @@ int createConnection() {
   else return soc;
 }
 
-void clientWork(int soc) {
+int clientWork(int soc) {
   unsigned short adress;
   unsigned short reg_no;
   unsigned short num_regs;
@@ -50,23 +77,12 @@ void clientWork(int soc) {
   unsigned char sendbuf[256];
   unsigned char recvnbuf[256];
 
-	fd_set fds;
-  struct timeval tv;
-
-  printf("Read holding registers - enter read\n");
-  printf("Exit - enter exit\n\n");
+  printf("\n1)Read holding registers - enter read\n");
+  printf("2)Exit - enter exit\n\n");
 
   char userinput[LENUSERINPUT];
   while(1)
   {
-    /*
-    int x = send(soc, "check", strlen("check"), 0);
-    if(x == -1){
-      printf("\nServer not working\n");
-      //close(soc);
-      break;
-    }
-    */
     printf("\ncmd >> ");
     fgets(userinput, LENUSERINPUT, stdin);
     if (strcmp(userinput, "exit\n") == 0){
@@ -109,52 +125,56 @@ void clientWork(int soc) {
       int lenbuf = 12;
 
       /* send request */
-     i = send(soc, sendbuf, lenbuf, 0);
-     if (i < lenbuf)
-     {
-       printf("Failed to send all\n");
-     }
+      i = send(soc, sendbuf, lenbuf, 0);
+      if (i < lenbuf)
+      {
+        printf("Failed to send all\n");
+      }
 
-     /* wait for response */
-     FD_SET(soc, &fds);
-     i = select(32, &fds, NULL, NULL, &tv);
-     if (i <= 0)
-     {
-       printf("No TCP response received\n");
-       break;
-     }
+      /* wait for response */
+      FD_SET(soc, &fds);
+      i = select(32, &fds, NULL, NULL, &tv);
+      if (i <= 0)
+      {
+        printf("No TCP response received\n");
+        close(soc);
+        return -1;
+      }
 
-     /* receive response */
-     i = recv(soc, recvnbuf, 256, 0);
-     if (i < 9)
-     {
-       if (i == 0)
-       {
-         printf("Server is break\n");
-         break;
-       }
-       else if(i == -1){
-         printf("Receive error");
-       }
-     }
-     else if (i != (9+2*num_regs))
-     {
-       printf("\n%s\n", recvnbuf);
-     }
-     else
-     {
-       printf("\n\n");
-       unsigned short reg;
-       for (i=0;i<num_regs;i++)
-       {
-         reg = (recvnbuf[9+i+i]<<8) + recvnbuf[10+i+i];
-         printf("register %d = %hd\n", reg_no, reg);
-         reg_no++;
-       }
-     }
-   }
-
+      /* receive response */
+      i = recv(soc, recvnbuf, 256, 0);
+      if (i < 9)
+      {
+        if (i == 0)
+        {
+          printf("\nServer crashed. ");
+          close(soc);
+          return -1;
+        }
+        else if(i == -1){
+          printf("\nReceive error\n");
+          close(soc);
+          return -1;
+        }
+      }
+      else if (i != (9+2*num_regs))
+      {
+        printf("\n%s\n", recvnbuf);
+      }
+      else
+      {
+        printf("\n\n");
+        unsigned short reg;
+        for (i=0;i<num_regs;i++)
+        {
+          reg = (recvnbuf[9+i+i]<<8) + recvnbuf[10+i+i];
+          printf("register %d = %hd\n", reg_no, reg);
+          reg_no++;
+        }
+      }
+    }
   }
 
   close(soc);
+  return 0;
 }
